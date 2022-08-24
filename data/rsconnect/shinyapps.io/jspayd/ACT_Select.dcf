@@ -1,0 +1,14 @@
+name: ACT_Select
+title: ACT_Select
+username:
+account: jspayd
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 6109967
+bundleId: 5808328
+url: https://jspayd.shinyapps.io/ACT_Select/
+when: 1650254086.42566
+lastSyncTime: 1650254086.42567
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .RData|al2020.csv|gr2020.csv|hd2020.csv|ic2020_ay.csv|ic2020.csv|map.png|map.svg|om2020.csv|sfa1920.csv|shiny1.R

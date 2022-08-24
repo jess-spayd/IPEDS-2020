@@ -1,0 +1,457 @@
+---
+title: "Visualizing IPEDS Data"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(maps)
+library(usmap)
+library(rgdal)
+library(plotly)
+library(reshape2)
+library(gganimate)
+library(shiny)
+library(animation)
+library(knitr)
+setwd("~/JHU/Data Visualization/Project Data/csv")
+ic2020_ay <- read_csv("ic2020_ay.csv")
+ic2020 <- read_csv("ic2020.csv")
+adm2020 <- read_csv("adm2020.csv")
+hd2020 <- read_csv("hd2020.csv")
+sfa1920 <- read_csv("sfa1920.csv")
+om2020 <- read_csv("om2020.csv")
+test_optional <- read_csv("test_optional.csv")
+```
+
+
+Column {}
+-----------------------------------------------------------------------
+### Four-Year Colleges in IPEDS Dataset {data-height=800}
+
+```{r warning=FALSE}
+map_data <- merge(hd2020, sfa1920, by="UNITID")
+map_data <- merge(map_data, ic2020, by="UNITID")
+map_data <- select(map_data, UNITID, INSTNM, LONGITUD, LATITUDE, STABBR, 
+                   SCUGFFN, CNTLAFFI, LEVEL5)
+
+territories <- c("AS", "GU", "MP", "PR", "FM", "PW", "VI", "MH")
+
+map_data <- as.data.frame(map_data)
+map_data <- subset(map_data, !(STABBR %in% territories))
+
+map_data$inst_type <- as.factor(map_data$CNTLAFFI)
+
+map_data$inst_type <- fct_collapse(map_data$inst_type, 
+                                 "Public" = "1",
+                                 "Private for-profit" = "2",
+                                 "Private not-for-profit" = c("3", "4"))
+
+map_data$bach <- as.factor(map_data$LEVEL5)
+map_data$bach <- fct_collapse(map_data$bach,
+                                     "Yes" = "1",
+                                     "No" = c("0","-2"))
+
+map_data <- subset(map_data, bach=="Yes")
+
+map_data_transformed <- usmap_transform(map_data, 
+                                        input_names = c("LONGITUD", "LATITUDE"))
+
+
+ggplotly(tooltip=c("text"), plot_usmap() +
+  geom_point(data = map_data_transformed, aes(x = x, y= y, 
+             color = inst_type, text=INSTNM), alpha = 0.5) +
+  labs(color="Institution Type") +
+  theme(legend.position="bottom")) %>%
+  layout(legend=list(orientation="h"))
+
+```
+
+> U.S. Department of Education, National Center for Education Statistics. (2020). Integrated Postsecondary Education Data System (IPEDS). Retrieved from https://nces.ed.gov/ipeds/datacenter/DataFiles.aspx?year=2020&surveyNumber=-1
+
+### All Colleges in IPEDS Dataset
+
+```{r}
+ic2020$inst_type <- as.factor(ic2020$CNTLAFFI)
+
+ic2020$inst_type <- fct_collapse(ic2020$inst_type, 
+                     "Public" = "1",
+                     "Private for-profit" = "2",
+                     "Private not-for-profit" = c("3", "4"))
+
+ic2020$bach <- as.factor(ic2020$LEVEL5)
+
+ic2020$bach <- fct_collapse(ic2020$bach,
+                                     "Yes" = "1",
+                                     "No" = c("0","-2"))
+
+ggplot(ic2020, aes(inst_type, color=inst_type,fill=bach)) + 
+  geom_bar(size=1.5) +
+  labs(x = "Institution Type") +
+  scale_fill_manual(name="Offers Bachelor's Degree",
+                      guide = guide_legend(reverse=TRUE),
+                    values=c("grey90","grey50"))+
+  guides(color="none")+
+  theme(panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank())
+
+
+
+```
+
+> Note that the "Public" category includes community or county colleges which typically do not offer four-year or bachelor's degrees, and "Private for-profit" colleges tend to offer more certificate, vocational or career programs rather than bachelor's degree programs.
+
+Column {.tabset}
+-----------------------------------------------------------------------
+### Test Optional Admissions
+
+```{r}
+test_optional <- as.data.frame(test_optional)
+
+before_covid <- subset(test_optional, year != 2020)
+
+year_count_bc <- before_covid %>%
+  group_by(year) %>%
+  count(year)
+
+test_opt <- ggplot(data=year_count_bc, aes(x=year,y=n)) +
+  geom_line() +
+  geom_point(size=1) +
+  labs(title = "US Colleges with New Test Optional Admissions Policies",
+       y = "count")+
+  scale_x_continuous(limits = c(2004,2019), 
+                     breaks = seq(2004,2019,2))+
+    transition_reveal(year)+
+  ease_aes('linear', interval = 0.001)
+
+animate(test_opt, duration=15,
+        fps=10, end_pause = 20)
+
+```
+
+Notably, more than 700 colleges have enforced new temporary or permanent test optional admissions policies between 2020 and 2022, about 10 times the number in 2019, in large part due to the impact of the COVID-19 pandemic. That said, there was a clear trend favoring test optional admissions over the years leading up to the pandemic. The data for 2020-2022 was omitted in this graphic in order to accurately depict that trend, independent of the pandemic.
+
+> FairTest, National Center for Fair and Open Testing. (2022). Test Optional Growth Chronology 2005-2022. Retrieved from https://www.fairtest.org/sites/default/files/Optional-Growth-Chronology.pdf
+
+
+### Admission Test Policies
+
+```{r}
+policy_type <- merge(ic2020, adm2020, by="UNITID") %>%
+  select(UNITID, CNTLAFFI, ADMCON7)
+policy_type$testpol <- as.factor(policy_type$ADMCON7)
+policy_type$testpol <- fct_recode(policy_type$testpol, "Required" = "1",
+                                  "Considered but not required" = "5",
+                                  "Recommended" = "2",
+                                  "Neither required nor recommended" = "3")
+policy_type$inst_type <- as.factor(policy_type$CNTLAFFI)
+policy_type$inst_type <- fct_collapse(policy_type$inst_type, 
+                                      "Public" = "1",
+                                      "Private for-profit" = "2",
+                                      "Private not-for-profit" = c("3", "4"))
+counts_policy <- policy_type %>%
+  group_by(inst_type) %>%
+  count(testpol)
+
+pub_pie <- subset(counts_policy, inst_type=="Public")
+privfp_pie <- subset(counts_policy, inst_type=="Private for-profit")
+privnfp_pie <- subset(counts_policy, inst_type=="Private not-for-profit")
+
+ggplot(pub_pie, aes(x="", y=n, fill=testpol)) +
+    geom_bar(stat="identity", width=1, color="white") +
+    coord_polar("y", start=0) +
+    theme_void() +
+    labs(title="Public Colleges") +
+    scale_fill_brewer(palette="Spectral",name="Admission Test Score Policy")
+  
+ggplot(privfp_pie, aes(x="", y=n, fill=testpol)) +
+    geom_bar(stat="identity", width=1, color="white") +
+    coord_polar("y", start=0) +
+    theme_void()+
+    labs(title="Private For-Profit Colleges")+
+    scale_fill_brewer(palette="Spectral",name="Admission Test Score Policy")
+  
+ggplot(privnfp_pie, aes(x="", y=n, fill=testpol)) +
+    geom_bar(stat="identity", width=1, color="white") +
+    coord_polar("y", start=0) +
+    theme_void()+
+    labs(title="Private Not-For-Profit Colleges")+
+    scale_fill_brewer(palette="Spectral",name="Admission Test Score Policy")
+
+```
+ 
+> Admission test policies vary widely between public, private for-profit, and private not-for-profit colleges. Public colleges tend to require test scores more than private colleges. This may be due to the higher rate of applicants at public colleges.
+
+### ACT Score Ranges
+
+```{r}
+df <- na.omit(adm2020)
+
+df$admit_rate <- df$ADMSSN / df$APPLCN
+df$admit_rate <- df$admit_rate * 100
+
+df <- select(df, admit_rate, ACTCM25, ACTCM75)
+df_melt <- melt(df, id="admit_rate")
+
+ggplot(data=df_melt) +
+  geom_point(aes(x=admit_rate,y=value, color=variable, alpha=1)) +
+  scale_color_manual(guide=guide_legend(reverse=T),
+                     values=c("orangered","orangered4"),
+                     name="",
+                     labels=c("25th Percentile", "75th Percentile"))+
+  guides(alpha="none")+
+  labs(title="Admission Rates and ACT Score Ranges of Admitted Students",
+       x="Percent of Applicants Accepted",
+       y="Composite ACT Score")+ 
+  annotate(geom="text", x=14, y=23, label="College of the Ozarks",
+              color="black", size=2.5)+
+  annotate("rect", xmin = 12, xmax = 17, ymin = 20, ymax = 26,
+           alpha = 0.1,fill = "blue",)+
+  annotate("rect", xmin = 0, xmax = 25, ymin = 30, ymax = 36,
+           alpha = 0,color = "black",linetype="dashed")
+```
+
+> The 25th percentile ACT scores at highly selective colleges (acceptance rate below 25%, inside the dashed box) are consistently higher than those at colleges who accept more than 25% of applicants. The relationship between scores and acceptance rates, however, is not linear. There is a ton of variability in the average ACT scores among less selective colleges. College of the Ozarks is the exception: a very small, private Christian college that charges no tuition and does not emphasize test scores in its admissions process. College of the Ozarks officially transitioned to test optional admissions in 2016.
+
+### "Free Money" for College
+
+
+```{r}
+fin_aid <- merge(x = ic2020, y = sfa1920, by = "UNITID")
+fin_aid <- as_tibble(fin_aid)
+fin_aid <- subset(fin_aid, !is.na(AGRNT_A))
+
+fin_aid$AGRNT_A <- fin_aid$AGRNT_A / 1000
+
+fin_aid$CNTLAFFI <- as_factor(fin_aid$CNTLAFFI)
+fin_aid$CNTLAFFI <- fct_collapse(fin_aid$CNTLAFFI,
+                                "Public" = "1",
+                                "Private for-profit" = "2",
+                                "Private not-for-profit" = c("3", "4"))
+
+ggplot(data = fin_aid, aes(x = CNTLAFFI, y = AGRNT_A)) +
+  geom_bar(position = "dodge",
+           stat = "summary",
+           fun = "mean",
+           fill = "darkgreen") +
+  guides(fill = "none") +
+  labs(x = "Institution Type",
+       y = "Average Grant Aid per Student (thousands of USD)",
+       title = "Financial Aid Grants Awarded Per Student")+
+  theme(panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank())
+
+
+
+```
+
+> On average, private colleges charge significantly more for tuition than public colleges. However, what many prospective students may not realize is that private colleges also tend to provide larger scholarship awards to students, which sometimes renders the tuition disparity negligible.
+
+### Loans, Grants, and Out-of-Pocket Costs, Oh My!
+
+> The student loan debt crisis is currently the topic of much debate. While loan forgiveness is a popular solution, there may be institutional factors worth taking a look at. Rising tuition costs are concerning, but it is also true that higher-cost private colleges tend to provide more scholarship aid ("free money").
+
+```{r warning=FALSE}
+df3 <- as_tibble(ic2020_ay)
+df3 <- select(df3, UNITID, CHG1AY3)
+df4 <- select(sfa1920, UNITID, AGRNT_A, UFLOANA)
+df5 <- as_tibble(hd2020)
+df5 <- select(df5, UNITID, INSTNM)
+df6 <- merge(x = df3, y = df4, by='UNITID')
+df7 <- merge(x = df6, y = df5, by='UNITID')
+df7 <- as_tibble(df7)
+
+df7$CHG1AY3 <- as.numeric(as.character(df7$CHG1AY3))
+df7 <- na.omit(df7)
+
+avg_tuition <- mean(df7$CHG1AY3)
+
+ggplot(df7, aes(y = AGRNT_A, x = CHG1AY3, color = UFLOANA))+
+  geom_point()+
+  scale_color_gradient(low = "green", high = "red")+
+  labs(title = "Average Financial Aid and Tuition",
+       y = "Average Grants & Scholarship Aid (USD)",
+       x = "Tuition & Fees (USD)",
+       color = "Avg Loan Amt")+
+  scale_y_continuous(breaks = seq(0, 65000, 20000),
+                     labels = c("0", "$20k", "$40k", "$60k")) + 
+  scale_x_continuous(breaks = seq(0, 65000, 20000),
+                     labels = c("0", "$20k", "$40k", "$60k"))+
+  geom_vline(xintercept = avg_tuition, linetype="dashed", color = "black")+
+  annotate("text", x = avg_tuition + 8500, y = 42000, 
+           label = "Avg Tuition & Fees", color = "black", size = 3.5)+
+  geom_text(data=filter(df7, CHG1AY3 > 42000 & 
+                          CHG1AY3 < 50000 & 
+                          AGRNT_A > 45000 &
+                          AGRNT_A < 55000),
+            mapping=aes(label=INSTNM), nudge_y=-2000, nudge_x=-5000,
+            size = 3)+
+  geom_text(data=filter(df7, CHG1AY3 == 61671 & 
+                          AGRNT_A == 57642),
+            mapping=aes(label="Columbia University"), 
+            nudge_y = 2000, nudge_x=-5000,
+            size = 3)
+
+```
+
+> According to IPEDS data, the amount of "free money" for college is positively correlated with college costs, consistent with the assumption that costly private schools provide more aid. However, the relationship with average federal student loan amounts is less clear. While lower costs are related to lower loan amounts, students at colleges with tuition near the average are borrowing the most, and high levels of grant and scholarship aid do not preclude you from needing to borrow a lot. This plot highlights two colleges that are outliers for student loan amounts. Berea College, a private liberal arts college in Kentucky, boasts a no-tuition promise to all students. High costs are met with high aid, and their students are avoiding high amounts of student loan debt. Conversely, Columbia University meets high costs with high aid, and still leaves students with high amounts of debt. **Note**: that this figure does not factor in the costs of room & board and other expenses related to college attendance, which may account for high loan amounts where a lot of aid is provided.
+
+### In-State Public Colleges
+
+> College affordability depends on a lot of factors. One way to reduce the cost of college attendance is to attend a public college in your own state. How realistic is this option for students across the United States?
+
+```{r}
+public_colleges <- subset(ic2020, CNTLAFFI == 1)
+
+map2_data <- merge(public_colleges, hd2020, by="UNITID")
+map2_data <- select(map2_data, UNITID, STABBR)
+map2_data <- count(map2_data, STABBR)
+map2_data <- rename(map2_data, abbr = STABBR)
+map2_data <- merge(map2_data, statepop, by="abbr")
+map2_data <- mutate(map2_data, pp_ratio = n / (pop_2015 / 100000))
+
+map <- plot_usmap(data = map2_data, values = "pp_ratio", labels = T) +
+  scale_fill_continuous(low = "white", high = "orangered", 
+                        name = "Public Colleges per 100,000 population") +
+  theme(legend.position = "bottom")
+
+map$layers[[2]]$aes_params$size <- 2
+print(map)
+
+mean_ratio <- mean(map2_data$pp_ratio)
+```
+
+> This map illustrates the disparities of public college options between states. The average number of colleges per state per 100,000 population is approximately 0.8. Notably, Nevada, Indiana, D.C. and Rhode Island fall below 0.3, while Montana and North Dakota exceed 1.5. West Virginia is an outlier at about 2.2 public colleges per 100,000 population. The high extreme represents lower population densities, but the low extreme includes states across the full spectrum of population density. **Note**: This visualization does not account for the number of open seats at each public college. Furthermore, it may be more insightful to examine the ratio of public colleges to the population of 18-21 year-olds.
+
+
+### Bachelor's Degree Completion
+
+> Although a bachelor's degree is often known as a "four-year degree," most students do not complete their degree within 4 years of entering college. Graduation rates are typically calculated for students who completed their degree within 4, 6 and 8 years.
+
+```{r}
+om2020 <- na.omit(om2020)
+adm2020 <- as_tibble(adm2020)
+df <- select(adm2020, ADMSSN, APPLCN, UNITID)
+
+df$admit_rate <- df$ADMSSN / df$APPLCN
+
+df <- merge(df, om2020, by="UNITID")
+df$admit_rate <- df$admit_rate * 100
+hi_sel <- subset(df, admit_rate <= 25)
+mid_sel <- subset(df, admit_rate <= 75 & admit_rate > 25)
+low_sel <- subset(df, admit_rate > 75)
+
+year <- c(4,6,8)
+
+hi_grads <- c((sum(hi_sel$OMBACH4) / sum(hi_sel$OMACHRT)), 
+              (sum(hi_sel$OMBACH6) / sum(hi_sel$OMACHRT)), 
+              (sum(hi_sel$OMBACH8) / sum(hi_sel$OMACHRT)))
+mid_grads <- c((sum(mid_sel$OMBACH4) / sum(mid_sel$OMACHRT)), 
+               (sum(mid_sel$OMBACH6) / sum(mid_sel$OMACHRT)), 
+               (sum(mid_sel$OMBACH8) / sum(mid_sel$OMACHRT)))
+low_grads <- c((sum(low_sel$OMBACH4) / sum(low_sel$OMACHRT)), 
+               (sum(low_sel$OMBACH6) / sum(low_sel$OMACHRT)), 
+               (sum(low_sel$OMBACH8) / sum(low_sel$OMACHRT)))
+all_grads <- c((sum(df$OMBACH4) / sum(df$OMACHRT)), 
+               (sum(df$OMBACH6) / sum(df$OMACHRT)), 
+               (sum(df$OMBACH8) / sum(df$OMACHRT)))
+
+all_bach <- tibble(year, all_grads)
+hi_bach <- tibble(year, hi_grads)
+mid_bach <- tibble(year, mid_grads)
+low_bach <-tibble(year, low_grads)
+
+sel_outcomes <- merge(hi_bach, mid_bach, by="year")
+sel_outcomes <- merge(sel_outcomes, low_bach, by="year")
+sel_outcomes <- merge(sel_outcomes, all_bach, by="year")
+sel_outcomes_melt <- melt(sel_outcomes, id="year")
+
+ggplot(data = sel_outcomes_melt) +
+  geom_line(aes(x=year, y=value, color=variable)) +
+  geom_point(aes(x=year, y=value, color=variable)) +
+  scale_x_continuous(limits = c(4,8), 
+                     breaks = seq(4,8,2), 
+                     labels = c("4", "6", "8")) +
+  labs(x = "Years to Degree Completion",
+       y = "Percent of Cohort Who Completed Degree",
+       title = "Degree Completion by Institution Selectivity") +
+  scale_y_continuous(limits = c(0.3, 1), 
+                     breaks = seq(0.3, 1, 0.1),
+                     labels = c("30%", "40%", "50%", "60%", "70%", "80%", "90%", 
+                                "100%"))+
+    scale_color_brewer(palette="Spectral",
+                     name="",
+                     labels=c("Highly Selective",
+                              "Somewhat Selective",
+                              "Not Selective",
+                              "Overall"))
+```
+
+> Selectivity refers to admission rates. Highly selective colleges accept 25% or fewer applicants; somewhat selective colleges accepted between 26 and 75% of applicants; colleges that are not selective accepted greater than 75% of applicants. Highly selective colleges boast much higher completion rates, but the trend is consistent among all colleges: most students take more than 4 years to graduate.
+
+### Remedial Services {data-height=600}
+
+> Remedial services are defined by IPEDS as "instructional activities designed for students deficient in the general competencies necessary for a regular postsecondary curriculum and educational setting." Remedial services at colleges prevent barriers to higher education. Only about half (51.88%) of institutions surveyed reported providing remedial services. What factors might contribute to a college offering such services?
+
+```{r}
+df <- select(adm2020, ADMSSN, APPLCN, UNITID)
+
+df$admit_rate <- df$ADMSSN / df$APPLCN * 100
+
+ic2020 <- as_tibble(ic2020)
+df1 <- select(ic2020, CNTLAFFI, STUSRV1, UNITID)
+
+hd2020 <- as_tibble(hd2020)
+hd2020 <- select(hd2020, UNITID, INSTSIZE, INSTNM)
+hd2020 <- filter(hd2020, INSTSIZE > 0)
+
+df1_5 <- merge(x = df, y = df1, by="UNITID")
+
+df2 <- merge(x = df1_5, y = hd2020, by='UNITID')
+df2 <- na.omit(df2)
+
+df2$inst_type <- as_factor(df2$CNTLAFFI)
+df2$inst_type <- fct_collapse(df2$inst_type,
+                                 "Public" = "1",
+                                 "Private for-profit" = "2",
+                                 "Private not-for-profit" = c("3", "4"))
+
+df2$remedial <- as_factor(df2$STUSRV1)
+df2$remedial <- fct_collapse(df2$remedial,
+                             "Yes" = "1",
+                             "No" = "0",
+                             "Unknown" = "-1")
+df2 <- filter(df2, remedial != "Unknown")
+
+mean_admrt <- mean(df2$admit_rate)
+med_admrt <- median(df2$admit_rate)
+
+df2$INSTSIZE <- as_factor(df2$INSTSIZE)
+df2$INSTSIZE <- fct_collapse(df2$INSTSIZE,
+                             "Under 1,000" = "1", 
+                             "1,000 - 4,999" = "2", 
+                               "5,000 - 9,999" = "3",
+                             "10,000 - 19,999" = "4", 
+                               "20,000 and above" = "5")
+
+remedial_svc <- ggplot(df2, aes(x = remedial, y = admit_rate, color = inst_type,
+                alpha = 0.5, text=INSTNM)) +
+  geom_jitter()+
+  labs(title = "Remedial Services and Selectivity",
+       x = "Does the institution provide remedial services?",
+       y = "Admission Rate %",
+       color = "Institution Type")+
+  guides(alpha="none")+
+  geom_hline(yintercept = mean_admrt, linetype="dashed", color = "white", 
+             size = 1)+
+  theme(panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank())
+
+ggplotly(tooltip=c("text", "admit_rate"), remedial_svc)
+
+```
+> This plot examines the relationship between remedial services and selectivity in admissions and institution control type. Public institutions appear more likely to offer remedial services, and highly selective colleges (those with admission rates under 25%) appear less likely to offer remedial services. A reference line to the mean admission rate is included at about 71%.
